@@ -5,12 +5,23 @@ import json
 from django.db import connection
 
 # ChatGLM
-from http import HTTPStatus
 from dashscope import Generation
 import dashscope
-import pymysql
-from termcolor import colored
 dashscope.api_key="sk-e6f3dc80013e40d6a085523cf0d4f008"
+
+# Zhipu
+from zhipuai import ZhipuAI
+
+'''
+# Spark
+from sparkai.llm.llm import ChatSparkLLM, ChunkPrintHandler
+from sparkai.core.messages import ChatMessage
+SPARKAI_URL = 'wss://spark-api.xf-yun.com/v3.5/chat'
+SPARKAI_APP_ID = '2516f528'
+SPARKAI_API_SECRET = 'YmQ3MmQ3NDk3YzkxODZlZDQ2MzI5OGJm'
+SPARKAI_API_KEY = '67840867de7fb02b7f2e2f082dcaa16c'
+SPARKAI_DOMAIN = 'generalv3.5'
+'''
 
 # 获取数据库的基本信息
 def get_database_info():
@@ -45,10 +56,10 @@ def database_info_to_string(database_info):
         info_string += f"Table: {table_name}\nColumns: {column_names}\n\n"
     return info_string
 
-def call_with_messages(info_string, user_query):
+def call_with_messages_ChatGLM(info_string, user_query):
     messages = [
         {'role': 'system', 'content': 'You are a clever system.'},
-        {'role': 'user', 'content': '现在，我有一个问题：{}。我需要请根据以下数据库模式编写SQL查询：{}。另外，查询应严格以纯文本的SQL语句形式返回，而不是以JSON形式返回。返回正确符合语法的SQL。不需要多余的分号。'.format(user_query, info_string)}
+        {'role': 'user', 'content': '现在，我有一个问题：{}。请将上面的自然语言查询转换为SQL语句。表结构：{}。另外，查询应严格以纯文本的SQL语句形式返回，而不是以JSON形式返回。返回正确符合语法的SQL。只要SQL。'.format(user_query, info_string)}
     ]
     gen = Generation()
     response = gen.call(
@@ -61,6 +72,77 @@ def call_with_messages(info_string, user_query):
     return sql_query
 
 
+def call_with_messages_Zhipu(info_string, user_query):
+    client = ZhipuAI(api_key="8aa7b504acbe1be362f61c5d437f7eba.t9DHRN0whCjbQQ7p")
+    response = client.chat.completions.create(
+        model="glm-4",
+        messages=[
+            {"role": "user", "content": f"表结构: {info_string}\n\n请将以下自然语言查询转换为SQL语句，只返回SQL语句本身，不需要其他解释。不要任何的注意！！！！：{user_query}"}
+        ],
+    )
+    sql_query = response.choices[0].message.content.strip()
+    # 提取实际的SQL查询语句
+    sql_query_lines = sql_query.split('\n')
+    complete_sql_query = []
+    select_found = False
+    for line in sql_query_lines:
+        line = line.strip()
+        if line.lower().startswith("select"):
+            select_found = True
+        if select_found:
+            complete_sql_query.append(line)
+        if line.endswith(';'):
+            break
+    if select_found:
+        sql_query = " ".join(complete_sql_query)
+        return sql_query
+    else:
+        print("Invalid SQL query generated.")
+
+'''
+def call_with_messages_Spark(info_string, user_query):
+    spark = ChatSparkLLM(
+        spark_api_url=SPARKAI_URL,
+        spark_app_id=SPARKAI_APP_ID,
+        spark_api_key=SPARKAI_API_KEY,
+        spark_api_secret=SPARKAI_API_SECRET,
+        spark_llm_domain=SPARKAI_DOMAIN,
+        streaming=False,
+    )
+    prompt = '完成Text2SQL 任务，数据库中有以下表{}：,回答以下问题{}'.format(info_string,user_query)
+    messages = [ChatMessage(
+        role="user",
+        content=prompt
+    )]
+    handler = ChunkPrintHandler()
+    response = spark.generate([messages], callbacks=[handler])
+    # 检查回复是否以SELECT开头
+    if response and response.generations and response.generations[0]:
+        generated_text = response.generations[0][0].text
+        if generated_text.startswith('SELECT'):
+            print("回答符合要求:", generated_text)
+            sql_query=generated_text
+            return sql_query
+        else:
+            print("回答不符合要求:", generated_text)
+    else:
+        print("未生成有效回复")
+'''
+
+
+
+def execute_query(sql_query):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql_query)
+            columns = [col[0] for col in cursor.description]
+            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return columns, results
+    except Exception as e:
+        print("SQL Execution Error:", e)
+        return None, None
+
+
 @csrf_exempt
 def natural_sql(request):
     if request.method == 'POST':
@@ -71,22 +153,39 @@ def natural_sql(request):
             info_string = database_info_to_string(database_info)
             print(info_string)
             print(query)
-            sql_query = call_with_messages(info_string, query)
-            print(sql_query)
+            print("----------ChatGLM3.6-----------")
+            sql_query_chatglm = call_with_messages_ChatGLM(info_string, query)
+            print(sql_query_chatglm)
+            print("----------Zhipu4-----------")
+            sql_query_zhipu = call_with_messages_Zhipu(info_string, query)
+            print(sql_query_zhipu)
+            '''
+            print("----------Spark-----------")
+            sql_query_spark = call_with_messages_Spark(info_string, query)
+            print(sql_query_spark)
+            '''
+            if sql_query_chatglm:
+                chatglm36_columns, chatglm36_results = execute_query(sql_query_chatglm)
+                print("----------ChatGLM3.6-----------")
+                print("ChatGLM Query Results:", chatglm36_results)
+            if sql_query_zhipu:
+                zhipu4_columns, zhipu4_results = execute_query(sql_query_zhipu)
+                print("----------Zhipu4-----------")
+                print("Zhipu Query Results:", zhipu4_results)
+            '''
+            if sql_query_spark:
+                spark_columns, spark_results = execute_query(sql_query_spark)
+                print("----------Zhipu4-----------")
+                print("Spark Query Results:", spark_results)
+            '''
+            response_data = {
+                "chatglmColumns": chatglm36_columns,
+                "chatglmResults": chatglm36_results,
+                "zhipuColumns": zhipu4_columns,
+                "zhipuResults": zhipu4_results,
 
-            if sql_query:
-                with connection.cursor() as cursor:
-                    try:
-                        cursor.execute(sql_query)
-                        columns = [col[0] for col in cursor.description]
-                        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-                        print("Query Results:", results)
-                        return JsonResponse({"columns": columns, "results": results}, safe=False)
-                    except Exception as e:
-                        print("SQL Execution Error:", e)
-                        return JsonResponse({"error": "SQL execution error: " + str(e)}, status=400)
-            else:
-                return JsonResponse({"error": "Invalid query"}, status=400)
+            }
+            return JsonResponse(response_data, safe=False)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
     return JsonResponse({"error": "Invalid request method"}, status=405)
