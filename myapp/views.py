@@ -11,7 +11,7 @@ from django.conf import settings
 # ChatGLM
 from dashscope import Generation
 import dashscope
-dashscope.api_key="1111111111111111111111111"
+dashscope.api_key="********************"
 
 # Zhipu
 from zhipuai import ZhipuAI
@@ -21,8 +21,8 @@ from sparkai.llm.llm import ChatSparkLLM, ChunkPrintHandler
 from sparkai.core.messages import ChatMessage
 SPARKAI_URL = 'wss://spark-api.xf-yun.com/v3.5/chat'
 SPARKAI_APP_ID = '2516f528'
-SPARKAI_API_SECRET = '1111111111111111111111111'
-SPARKAI_API_KEY = '1111111111111111111111111'
+SPARKAI_API_SECRET = '********************'
+SPARKAI_API_KEY = '********************'
 SPARKAI_DOMAIN = 'generalv3.5'
 
 # Tencent
@@ -33,6 +33,37 @@ from tencentcloud.common.profile.client_profile import ClientProfile
 from tencentcloud.common.profile.http_profile import HttpProfile
 from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
 from tencentcloud.hunyuan.v20230901 import hunyuan_client, models
+
+def get_databases(request):
+    """
+    获取所有数据库的接口
+    """
+    cursor = connection.cursor()
+    cursor.execute("SHOW DATABASES")
+    databases = [row[0] for row in cursor.fetchall()]
+    return JsonResponse({'databases': databases})
+
+def get_tables(request, database_name):
+    """
+    获取某个数据库的所有表名的接口
+    """
+    cursor = connection.cursor()
+    cursor.execute(f"USE {database_name}")
+    cursor.execute("SHOW TABLES")
+    tables = [row[0] for row in cursor.fetchall()]
+    return JsonResponse({'tables': tables})
+
+def get_table_data(request, database_name, table_name):
+    """
+    获取某个表的所有数据的接口
+    """
+    cursor = connection.cursor()
+    cursor.execute(f"USE {database_name}")
+    cursor.execute(f"SELECT * FROM {table_name}")
+    columns = [col[0] for col in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    return JsonResponse({'columns': columns, 'rows': rows})
+
 
 # 读取上传的 SQL 文件并执行
 def read_sql_file(file_path):
@@ -98,9 +129,10 @@ def upload_file(request):
 
 
 # 获取数据库的基本信息
-def get_database_info():
+def get_database_info(database):
     database_info = []
     with connection.cursor() as cursor:
+        cursor.execute(f"USE `{database}`")
         cursor.execute("SHOW TABLES")
         tables = cursor.fetchall()
         for table in tables:
@@ -147,7 +179,7 @@ def call_with_messages_ChatGLM(info_string, user_query):
 
 
 def call_with_messages_Zhipu(info_string, user_query):
-    client = ZhipuAI(api_key="1111111111111111111111111")
+    client = ZhipuAI(api_key="********************")
     response = client.chat.completions.create(
         model="glm-4",
         messages=[
@@ -203,7 +235,7 @@ def call_with_messages_Spark(info_string, user_query):
 
 def call_with_messages_Tencent(info_string, user_query):
     try:
-        cred = credential.Credential("1111111111111111111111111", "1111111111111111111111111")
+        cred = credential.Credential("********************", "********************")
         httpProfile = HttpProfile()
         httpProfile.endpoint = "hunyuan.tencentcloudapi.com"
         clientProfile = ClientProfile()
@@ -238,10 +270,11 @@ def call_with_messages_Tencent(info_string, user_query):
     except TencentCloudSDKException as err:
         print(f"接口调用失败：{err}")
 
-
-def execute_query(sql_query):
+# 执行产生的SQL语句并返回结果
+def execute_query(sql_query, database):
     try:
         with connection.cursor() as cursor:
+            cursor.execute(f"USE `{database}`")
             cursor.execute(sql_query)
             columns = [col[0] for col in cursor.description]
             results = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -257,7 +290,8 @@ def natural_sql(request):
         try:
             data = json.loads(request.body)
             query = data.get('query')
-            database_info = get_database_info()
+            database = data.get('database')
+            database_info = get_database_info(database)
             info_string = database_info_to_string(database_info)
             print(info_string)
             print(query)
@@ -275,19 +309,19 @@ def natural_sql(request):
             print(sql_query_tencent)
 
             if sql_query_chatglm:
-                chatglm36_columns, chatglm36_results = execute_query(sql_query_chatglm)
+                chatglm36_columns, chatglm36_results = execute_query(sql_query_chatglm,database)
                 print("----------ChatGLM3.6-----------")
                 print("ChatGLM Query Results:", chatglm36_results)
             if sql_query_zhipu:
-                zhipu4_columns, zhipu4_results = execute_query(sql_query_zhipu)
+                zhipu4_columns, zhipu4_results = execute_query(sql_query_zhipu,database)
                 print("----------Zhipu4-----------")
                 print("Zhipu Query Results:", zhipu4_results)
             if sql_query_spark:
-                spark_columns, spark_results = execute_query(sql_query_spark)
+                spark_columns, spark_results = execute_query(sql_query_spark,database)
                 print("----------Spark-----------")
                 print("Spark Query Results:", spark_results)
             if sql_query_spark:
-                tencent_columns, tencent_results = execute_query(sql_query_spark)
+                tencent_columns, tencent_results = execute_query(sql_query_spark,database)
                 print("----------Tencent-----------")
                 print("Spark Query Results:", tencent_results)
 

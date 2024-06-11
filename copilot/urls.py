@@ -22,5 +22,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('natural_sql/', views.natural_sql),
     path('upload_file/', views.upload_file),
+    path('databases/', views.get_databases, name='get_databases'),
+    path('tables/<str:database_name>/', views.get_tables, name='get_tables'),
+    path('table/<str:database_name>/<str:table_name>/', views.get_table_data, name='get_table_data'),
 
 ]
