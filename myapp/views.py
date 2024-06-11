@@ -8,6 +8,11 @@ import mysql.connector
 import os
 from django.conf import settings
 from .models import QueryRecord
+from decimal import Decimal
+import plotly.graph_objects as go
+import base64
+from io import BytesIO
+
 
 # ChatGLM
 from dashscope import Generation
@@ -324,7 +329,7 @@ def natural_sql(request):
             if sql_query_spark:
                 tencent_columns, tencent_results = execute_query(sql_query_spark,database)
                 print("----------Tencent-----------")
-                print("Spark Query Results:", tencent_results)
+                print("Tencent Query Results:", tencent_results)
 
             response_data = {
                 "chatglmColumns": chatglm36_columns,
@@ -372,3 +377,87 @@ def get_records(request):
         } for record in records
     ]
     return JsonResponse({"records": records_data}, safe=False)
+
+# 限定图的类型
+def draw_with_type(columns, results, chart_type):
+    num_cols = len(columns)
+    xx = [row[columns[0]] for row in results]
+    xx = [str(x) for x in xx]
+    yy = None
+    # 如果执行结果只有两列，x,y轴数据固定为第一，二列
+    if num_cols == 2:
+        yy = [result[columns[1]] for result in results]
+    # 如果执行结果大于两列，x轴数据固定为第一列
+    # y轴数据为第一个数据列
+    else:
+        for i in range(1, num_cols):
+            column_data = [result[columns[i]] for result in results]
+            if all(isinstance(value, (Decimal, int, float)) for value in column_data):
+                yy = column_data
+                break
+    print(yy)
+    fig = go.Figure()
+    if chart_type == 'bar':
+        fig.add_trace(go.Bar(
+            x=xx,
+            y=yy,
+            orientation='v',
+            marker=dict(
+                color='skyblue'
+            )
+        ))
+        # 设置布局
+        fig.update_layout(
+            title='柱形图'
+        )
+    elif chart_type == 'line':
+        fig.add_trace(go.Scatter(
+            x=xx,
+            y=yy,
+            mode='lines+markers',
+            line=dict(color='green', width=2),
+            marker=dict(color='darkgreen', size=10)
+        ))
+        # 设置布局
+        fig.update_layout(
+            title='折线图'
+        )
+    elif chart_type == 'pie':
+        fig.add_trace(go.Pie(
+            labels=xx,
+            values=yy,
+            marker=dict(colors=['gold', 'mediumturquoise', 'darkorange', 'lightgreen']),
+        ))
+        # 设置布局
+        fig.update_layout(
+            title='饼图'
+        )
+    else:
+        return "Unsupported chart type"
+
+    fig.show()
+    # 将图像保存为Base64编码字符串
+    buffer = BytesIO()
+    fig.write_image(buffer, format='png',width=500, height=300)
+    buffer.seek(0)
+    img_str = base64.b64encode(buffer.read()).decode('utf-8')
+
+    return img_str
+
+
+@csrf_exempt
+def visualize(request):
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        chart_type = data.get('chart_type')
+        columns = data.get('columns')
+        results = data.get('results')
+        if chart_type and columns and results:
+            image_str = draw_with_type(columns, results, chart_type)
+            return JsonResponse({'image_data': image_str})
+        else:
+            return JsonResponse({'error': 'Missing parameters'}, status=400)
+
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
