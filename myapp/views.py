@@ -3,6 +3,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.db import connection
+from django.db.utils import OperationalError
+import mysql.connector
+import os
+from django.conf import settings
 
 # ChatGLM
 from dashscope import Generation
@@ -29,6 +33,67 @@ from tencentcloud.common.profile.client_profile import ClientProfile
 from tencentcloud.common.profile.http_profile import HttpProfile
 from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
 from tencentcloud.hunyuan.v20230901 import hunyuan_client, models
+
+# 读取上传的 SQL 文件并执行
+def read_sql_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        sql_script = file.read()
+    return sql_script
+
+# 执行建库的SQL
+def create_database(host, user, password, database, sql_script):
+    try:
+        conn = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=password
+        )
+        cursor = conn.cursor()
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database}")
+        cursor.execute(f"USE {database}")
+        for result in cursor.execute(sql_script, multi=True):
+            if result.with_rows:
+                result.fetchall()
+        conn.commit()
+        conn.close()
+        print("数据库创建成功！")
+    except mysql.connector.Error as e:
+        print("数据库创建失败：", e)
+
+@csrf_exempt
+def upload_file(request):
+    if request.method == 'POST':
+        if 'file' not in request.FILES:
+            return JsonResponse({'message': 'No file provided'}, status=400)
+
+        uploaded_file = request.FILES['file']
+        uploads_dir = os.path.join(settings.BASE_DIR, 'myapp', 'uploads')
+
+        # 创建 uploads 目录
+        if not os.path.exists(uploads_dir):
+            os.makedirs(uploads_dir)
+
+        file_path = os.path.join(uploads_dir, uploaded_file.name)
+
+        with open(file_path, 'wb+') as destination:
+            for chunk in uploaded_file.chunks():
+                destination.write(chunk)
+
+        sql_script = read_sql_file(file_path)
+
+        try:
+            host = '127.0.0.1'
+            user = 'root'
+            password = 'root123a'
+            database = request.POST.get('database_name', 'default_database_name')
+            print("Database Name:", database)
+            create_database(host, user, password, database, sql_script)
+
+            message = f'文件 {uploaded_file.name} 上传成功！'
+            return JsonResponse({'message': message, 'db_created': True, 'db_message': '数据库创建成功！'})
+        except mysql.connector.Error as e:
+            return JsonResponse({'message': f'文件上传成功，但是数据库创建失败：{e}', 'db_created': False, 'db_message': '数据库创建失败'}, status=500)
+
 
 
 

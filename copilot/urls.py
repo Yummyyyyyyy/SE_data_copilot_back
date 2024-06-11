@@ -21,5 +21,6 @@ from myapp import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('natural_sql/', views.natural_sql),
+    path('upload_file/', views.upload_file),
 
 ]
