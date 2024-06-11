@@ -12,7 +12,6 @@ dashscope.api_key="sk-e6f3dc80013e40d6a085523cf0d4f008"
 # Zhipu
 from zhipuai import ZhipuAI
 
-'''
 # Spark
 from sparkai.llm.llm import ChatSparkLLM, ChunkPrintHandler
 from sparkai.core.messages import ChatMessage
@@ -21,7 +20,17 @@ SPARKAI_APP_ID = '2516f528'
 SPARKAI_API_SECRET = 'YmQ3MmQ3NDk3YzkxODZlZDQ2MzI5OGJm'
 SPARKAI_API_KEY = '67840867de7fb02b7f2e2f082dcaa16c'
 SPARKAI_DOMAIN = 'generalv3.5'
-'''
+
+# Tencent
+import json
+import types
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+from tencentcloud.hunyuan.v20230901 import hunyuan_client, models
+
+
 
 # 获取数据库的基本信息
 def get_database_info():
@@ -99,7 +108,7 @@ def call_with_messages_Zhipu(info_string, user_query):
     else:
         print("Invalid SQL query generated.")
 
-'''
+
 def call_with_messages_Spark(info_string, user_query):
     spark = ChatSparkLLM(
         spark_api_url=SPARKAI_URL,
@@ -109,7 +118,7 @@ def call_with_messages_Spark(info_string, user_query):
         spark_llm_domain=SPARKAI_DOMAIN,
         streaming=False,
     )
-    prompt = '完成Text2SQL 任务，数据库中有以下表{}：,回答以下问题{}'.format(info_string,user_query)
+    prompt = '完成Text2SQL 任务，数据库中有以下表{}：,回答以下问题{}。返回纯文本sql'.format(info_string,user_query)
     messages = [ChatMessage(
         role="user",
         content=prompt
@@ -120,15 +129,49 @@ def call_with_messages_Spark(info_string, user_query):
     if response and response.generations and response.generations[0]:
         generated_text = response.generations[0][0].text
         if generated_text.startswith('SELECT'):
-            print("回答符合要求:", generated_text)
             sql_query=generated_text
             return sql_query
         else:
             print("回答不符合要求:", generated_text)
     else:
         print("未生成有效回复")
-'''
 
+def call_with_messages_Tencent(info_string, user_query):
+    try:
+        cred = credential.Credential("AKIDjO6weDoHaoofNtGiNuDPO8g8Tc2FNbmx", "DMMGHOd6Wlx1rSp387ycJsGWbYJ7soiS")
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "hunyuan.tencentcloudapi.com"
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = hunyuan_client.HunyuanClient(cred, "", clientProfile)
+        combined_message = (
+            "数据库表结构：{}，\n\n 问题：{} 请根据数据库信息，直接给出该问题的sql查询语句，注意是直接给sql语言".format(info_string,user_query))
+        req = models.ChatCompletionsRequest()
+        params = {
+            "Model": "hunyuan-standard",
+            "Messages": [
+                {
+                    "Role": "user",
+                    "Content": combined_message
+                }
+            ]
+        }
+        req.from_json_string(json.dumps(params))
+        resp = client.ChatCompletions(req)
+        if isinstance(resp, types.GeneratorType):  # 流式响应
+            for event in resp:
+                event_data = json.loads(event)
+                content = event_data.get("Response", {}).get("Choices", [{}])[0].get("Message", {}).get("Content", "")
+                print(content)
+        else:  # 非流式响应
+            resp_json = json.loads(resp.to_json_string())
+            content = resp_json.get("Choices", [{}])[0].get("Message", {}).get("Content", "")
+            print(content)
+        sql_query = content
+        return sql_query
+
+    except TencentCloudSDKException as err:
+        print(f"接口调用失败：{err}")
 
 
 def execute_query(sql_query):
@@ -159,11 +202,13 @@ def natural_sql(request):
             print("----------Zhipu4-----------")
             sql_query_zhipu = call_with_messages_Zhipu(info_string, query)
             print(sql_query_zhipu)
-            '''
             print("----------Spark-----------")
             sql_query_spark = call_with_messages_Spark(info_string, query)
             print(sql_query_spark)
-            '''
+            print("----------Tencent-----------")
+            sql_query_tencent = call_with_messages_Tencent(info_string, query)
+            print(sql_query_tencent)
+
             if sql_query_chatglm:
                 chatglm36_columns, chatglm36_results = execute_query(sql_query_chatglm)
                 print("----------ChatGLM3.6-----------")
@@ -172,17 +217,24 @@ def natural_sql(request):
                 zhipu4_columns, zhipu4_results = execute_query(sql_query_zhipu)
                 print("----------Zhipu4-----------")
                 print("Zhipu Query Results:", zhipu4_results)
-            '''
             if sql_query_spark:
                 spark_columns, spark_results = execute_query(sql_query_spark)
-                print("----------Zhipu4-----------")
+                print("----------Spark-----------")
                 print("Spark Query Results:", spark_results)
-            '''
+            if sql_query_spark:
+                tencent_columns, tencent_results = execute_query(sql_query_spark)
+                print("----------Tencent-----------")
+                print("Spark Query Results:", tencent_results)
+
             response_data = {
                 "chatglmColumns": chatglm36_columns,
                 "chatglmResults": chatglm36_results,
                 "zhipuColumns": zhipu4_columns,
                 "zhipuResults": zhipu4_results,
+                "sparkColumns": spark_columns,
+                "sparkResults": spark_results,
+                "tencentColumns": tencent_columns,
+                "tencentResults": tencent_results,
 
             }
             return JsonResponse(response_data, safe=False)
