@@ -7,6 +7,7 @@ from django.db.utils import OperationalError
 import mysql.connector
 import os
 from django.conf import settings
+from .models import QueryRecord
 
 # ChatGLM
 from dashscope import Generation
@@ -340,3 +341,34 @@ def natural_sql(request):
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
     return JsonResponse({"error": "Invalid request method"}, status=405)
+
+# 保存查询记录
+@csrf_exempt
+def save_record(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            record = QueryRecord(
+                database=data['database'],
+                query=data['query'],
+                results=data['results'],
+            )
+            record.save()
+            return JsonResponse({"message": "Record saved successfully"}, status=201)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+# 展示查询记录
+def get_records(request):
+    records = QueryRecord.objects.all().order_by('-timestamp')
+    records_data = [
+        {
+            "id": record.id,
+            "database": record.database,
+            "query": record.query,
+            "results": record.results,
+            "timestamp": record.timestamp,
+        } for record in records
+    ]
+    return JsonResponse({"records": records_data}, safe=False)

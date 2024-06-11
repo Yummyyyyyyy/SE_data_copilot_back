@@ -7,6 +7,15 @@
 # Feel free to rename the models, but don't rename db_table values or field names.
 from django.db import models
 
+class QueryRecord(models.Model):
+    database = models.CharField(max_length=255)
+    query = models.TextField()
+    results = models.JSONField()  # assuming Django 3.1+ for JSONField
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.database} - {self.query[:50]}"
+
 
 class OrderInfo(models.Model):
     order_id = models.CharField(max_length=50, blank=True, null=True)

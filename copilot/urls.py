@@ -25,5 +25,7 @@ urlpatterns = [
     path('databases/', views.get_databases, name='get_databases'),
     path('tables/<str:database_name>/', views.get_tables, name='get_tables'),
     path('table/<str:database_name>/<str:table_name>/', views.get_table_data, name='get_table_data'),
+    path('save_record/', views.save_record, name='save_record'),
+    path('get_records/', views.get_records, name='get_records'),
 
 ]
