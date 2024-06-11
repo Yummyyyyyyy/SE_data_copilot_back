@@ -7,7 +7,7 @@ from django.db import connection
 # ChatGLM
 from dashscope import Generation
 import dashscope
-dashscope.api_key="sk-e6f3dc80013e40d6a085523cf0d4f008"
+dashscope.api_key="1111111111111111111111111"
 
 # Zhipu
 from zhipuai import ZhipuAI
@@ -17,8 +17,8 @@ from sparkai.llm.llm import ChatSparkLLM, ChunkPrintHandler
 from sparkai.core.messages import ChatMessage
 SPARKAI_URL = 'wss://spark-api.xf-yun.com/v3.5/chat'
 SPARKAI_APP_ID = '2516f528'
-SPARKAI_API_SECRET = 'YmQ3MmQ3NDk3YzkxODZlZDQ2MzI5OGJm'
-SPARKAI_API_KEY = '67840867de7fb02b7f2e2f082dcaa16c'
+SPARKAI_API_SECRET = '1111111111111111111111111'
+SPARKAI_API_KEY = '1111111111111111111111111'
 SPARKAI_DOMAIN = 'generalv3.5'
 
 # Tencent
@@ -82,7 +82,7 @@ def call_with_messages_ChatGLM(info_string, user_query):
 
 
 def call_with_messages_Zhipu(info_string, user_query):
-    client = ZhipuAI(api_key="8aa7b504acbe1be362f61c5d437f7eba.t9DHRN0whCjbQQ7p")
+    client = ZhipuAI(api_key="1111111111111111111111111")
     response = client.chat.completions.create(
         model="glm-4",
         messages=[
@@ -138,7 +138,7 @@ def call_with_messages_Spark(info_string, user_query):
 
 def call_with_messages_Tencent(info_string, user_query):
     try:
-        cred = credential.Credential("AKIDjO6weDoHaoofNtGiNuDPO8g8Tc2FNbmx", "DMMGHOd6Wlx1rSp387ycJsGWbYJ7soiS")
+        cred = credential.Credential("1111111111111111111111111", "1111111111111111111111111")
         httpProfile = HttpProfile()
         httpProfile.endpoint = "hunyuan.tencentcloudapi.com"
         clientProfile = ClientProfile()
